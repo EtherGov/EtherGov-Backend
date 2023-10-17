@@ -1,2 +1,2 @@
-# SNZ-DAO-Tool-Backend
-Backend for SNZ DAO Tool
+# EtherGov-Backend
+Backend for EtherGov
