@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import cors from "cors";
 import { litRouter } from "./src/routes/lit.router";
 import { GovernanceRouter } from "./src/routes/governance.router";
+import { AccountAbstractionRouter } from "./src/routes/accountAbstraction.router";
 
 dotenv.config();
 
@@ -12,7 +13,8 @@ _app
   .use(express.json())
   .use(cors())
   .use("/lit", litRouter())
-  .use("/governance", GovernanceRouter());
+  .use("/governance", GovernanceRouter())
+  .use("/account", AccountAbstractionRouter());
 
 _app.get("/test", (req: Request, res: Response) => {
   res.send("Express + TypeScript Server is running test");

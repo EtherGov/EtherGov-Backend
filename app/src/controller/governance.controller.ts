@@ -1,13 +1,21 @@
-import {
+import Safe, {
   EthersAdapter,
   SafeFactory,
   SafeAccountConfig,
+  SafeConfig,
 } from "@safe-global/protocol-kit";
+import { SafeTransactionDataPartial } from "@safe-global/safe-core-sdk-types";
 import { Contract, ethers } from "ethers";
 import { Request, Response } from "express";
 import { Config } from "../shared/interface";
 import { getProvider } from "../services/provider";
 import { supabase } from "../services/supabase";
+import {
+  addModule,
+  createMultisig,
+  deployModule,
+  listenModule,
+} from "../services/safe";
 
 export class GovernanceController {
   addGovernance = async (req: Request, res: Response) => {
@@ -33,14 +41,24 @@ export class GovernanceController {
         },
       };
 
-      const result = await this.createMultisig(config, signer);
+      const result = await createMultisig(config, signer);
+      const [tx_hash, moduleAddress] = await Promise.all([
+        deployModule(chainId),
+        listenModule(governanceAddress, chainId),
+      ]);
 
+      console.log(moduleAddress);
+
+      const addMod = await addModule(result, chainId, moduleAddress as string);
+      console.log(addMod);
       const { data, error } = await supabase
         .from("governance_contract")
         .insert({
           contract_address: governanceAddress,
           account_tank_address: result,
           deployer: deployer,
+          chain_id: chainId,
+          module_address: moduleAddress,
         })
         .select("*");
       console.log(data);
@@ -52,52 +70,95 @@ export class GovernanceController {
     }
   };
 
-  private createMultisig = async (config: Config, signer: ethers.Wallet) => {
-    const ethAdapter = new EthersAdapter({
-      ethers,
-      signerOrProvider: signer,
-    });
+  executeProposal = async (req: Request, res: Response) => {
+    try {
+      const {
+        governance_address,
+        proposalId,
+        councilAddress,
+        tokenAddressSource,
+        tokenAddressDestination,
+        sourceValue,
+        destinationValue,
+      } = req.body;
 
-    const safeFactory = await SafeFactory.create({
-      ethAdapter,
-    });
+      if (
+        !governance_address ||
+        !proposalId ||
+        !councilAddress ||
+        !tokenAddressSource ||
+        !tokenAddressDestination ||
+        !sourceValue ||
+        !destinationValue
+      ) {
+        return res.status(400).json({ message: "Invalid params" });
+      }
 
-    const safeAccountConfig: SafeAccountConfig = {
-      owners: config.DEPLOY_SAFE.OWNERS,
-      threshold: config.DEPLOY_SAFE.THRESHOLD,
-    };
+      const { data, error } = await supabase
+        .from("governance_contract")
+        .select("*")
+        .eq("contract_address", governance_address);
 
-    const saltNonce = config.DEPLOY_SAFE.SALT_NONCE;
+      if (error)
+        return res.status(500).json({ message: "Internal server error" });
 
-    const predictedDeploySafeAddress = await safeFactory.predictSafeAddress(
-      safeAccountConfig,
-      saltNonce.toString()
-    );
+      if (data.length === 0)
+        return res.status(404).json({ message: "No governance found" });
 
-    console.log("Predicted deployed Safe address:", predictedDeploySafeAddress);
+      const provider = getProvider(data[0].chain_id);
 
-    function callback(txHash: string) {
-      console.log("Transaction hash:", txHash);
+      const signer = new ethers.Wallet(
+        process.env.DEPLOY_SAFE_PRIVATE_KEY || "",
+        provider
+      );
+
+      const config: SafeConfig = {
+        safeAddress: data[0].account_tank_address,
+        ethAdapter: new EthersAdapter({
+          ethers,
+          signerOrProvider: signer,
+        }),
+      };
+
+      const safeAccount = await Safe.create(config);
+      const functionSignature = "execute(uint256)";
+      const functionSelector = ethers.utils.id(functionSignature).slice(0, 10); // First 4 bytes of the keccak256 hash
+
+      const encodedArguments = ethers.utils.defaultAbiCoder.encode(
+        ["uint256"],
+        [proposalId]
+      );
+
+      const finalData = functionSelector + encodedArguments.slice(2); // Concatenate and remove the '0x' from the encoded arguments
+
+      console.log(finalData);
+
+      const safeTransaction: SafeTransactionDataPartial = {
+        to: governance_address,
+        data: finalData,
+        value: "0.001",
+      };
+
+      const prepareTransaction = await safeAccount.createTransaction({
+        safeTransactionData: safeTransaction,
+      });
+
+      const isValidTx = await safeAccount.isValidTransaction(
+        prepareTransaction
+      );
+
+      if (!isValidTx) {
+        return res.status(400).json({ message: "Invalid transaction" });
+      }
+
+      const txHash = await safeAccount.executeTransaction(prepareTransaction);
+
+      const resultHash = await txHash.transactionResponse?.wait();
+
+      return res.status(200).json({ resultHash });
+    } catch (e) {
+      console.log(e);
+      return res.status(500).json({ message: "Internal server error" });
     }
-
-    // Deploy Safe
-    const safe = await safeFactory.deploySafe({
-      safeAccountConfig,
-      saltNonce: saltNonce.toString(),
-      callback,
-    });
-    const safeAddress = await safe.getAddress();
-
-    console.log("Deployed Safe:", safeAddress);
-
-    return safeAddress;
   };
-
-  //   returnAllGovernance = async(req: Request, res: Response) => {
-  //     try {
-  //         const contract = new Contract("0x41f900be467060a3af9f02ffb44e36f0cebb02a3",)
-  //     }catch(e){
-
-  //     }
-  //   }
 }
