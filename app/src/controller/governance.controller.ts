@@ -161,4 +161,38 @@ export class GovernanceController {
       return res.status(500).json({ message: "Internal server error" });
     }
   };
+
+  getAllOwnerVault = async (req: Request, res: Response) => {
+    try {
+      const { governanceAddress } = req.params;
+
+      //find the wallet that exist owned by this governance address
+      const { data, error } = await supabase
+        .from("aa_wallet")
+        .select("wallet_address")
+        .eq("contract_address", governanceAddress);
+
+      if (error) {
+        return res.status(500).json({ message: error.message });
+      }
+
+      if (data.length === 0) {
+        return res.status(200).json([{}]);
+      }
+
+      const { data: data2, error: error2 } = await supabase
+        .from("entries_aa")
+        .select("*")
+        .in("wallet_address", data[0].wallet_address);
+
+      if (error2) {
+        return res.status(500).json({ message: error2.message });
+      }
+
+      return res.status(200).json(data2);
+    } catch (e) {
+      console.log(e);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  };
 }

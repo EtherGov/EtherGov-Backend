@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import {
   ARBITRUM_CHAIN_ID,
+  MANTLE_TESTNET,
   MUMBAI_CHAIN_ID,
   SCROLL_CHAIN_ID,
   SEPOLIA_CHAIN_ID,
@@ -30,7 +31,11 @@ export function getProvider(chainId: number) {
         `https://sepolia-rpc.scroll.io`
       );
       break;
-
+    case MANTLE_TESTNET:
+      provider = new ethers.providers.JsonRpcProvider(
+        "https://rpc.testnet.mantle.xyz"
+      );
+      break;
     default:
       provider = new ethers.providers.JsonRpcProvider(
         "http://host.docker.internal:8545"

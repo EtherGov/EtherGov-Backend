@@ -2,7 +2,11 @@ import { Request, Response } from "express";
 import { getProvider } from "../services/provider";
 import { ethers } from "ethers";
 import { Config } from "../shared/interface";
-import { createMultisig } from "../services/safe";
+import {
+  createMultisig,
+  deployModuleChain,
+  listenModuleChain,
+} from "../services/safe";
 import { supabase } from "../services/supabase";
 
 export class AccountAbstractionController {
@@ -18,6 +22,8 @@ export class AccountAbstractionController {
       console.log(process.env.DEPLOY_SAFE_PRIVATE_KEY);
 
       const provider = getProvider(chainId);
+
+      console.log(provider);
 
       const signer = new ethers.Wallet(
         process.env.DEPLOY_SAFE_PRIVATE_KEY || "",
@@ -52,6 +58,10 @@ export class AccountAbstractionController {
           .insert({ wallet_address: result, chain_id: chainId })
           .select("*");
 
+        const [tx_hash, moduleAddress] = await Promise.all([
+          deployModuleChain(result, chainId),
+          listenModuleChain(result, chainId),
+        ]);
         //Here it will insert the wallet address inside the array so that it would be able to query on the entries table
         const { data: data2, error: error2 } = await supabase
           .from("aa_wallet")
@@ -73,6 +83,11 @@ export class AccountAbstractionController {
         .from("entries_aa")
         .insert({ wallet_address: result, chain_id: chainId })
         .select("*");
+
+      const [tx_hash, moduleAddress] = await Promise.all([
+        deployModuleChain(result, chainId),
+        listenModuleChain(result, chainId),
+      ]);
 
       const { data: data2, error: error2 } = await supabase
         .from("aa_wallet")
