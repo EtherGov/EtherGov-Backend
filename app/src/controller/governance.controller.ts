@@ -16,6 +16,8 @@ import {
   deployModule,
   listenModule,
 } from "../services/safe";
+import ModuleHub from "../../abi/ModuleHub.json";
+import GovernanceAbi from "../../abi/Governance.json";
 
 export class GovernanceController {
   addGovernance = async (req: Request, res: Response) => {
@@ -72,25 +74,9 @@ export class GovernanceController {
 
   executeProposal = async (req: Request, res: Response) => {
     try {
-      const {
-        governance_address,
-        proposalId,
-        councilAddress,
-        tokenAddressSource,
-        tokenAddressDestination,
-        sourceValue,
-        destinationValue,
-      } = req.body;
+      const { governance_address, messageBody, proposalId } = req.body;
 
-      if (
-        !governance_address ||
-        !proposalId ||
-        !councilAddress ||
-        !tokenAddressSource ||
-        !tokenAddressDestination ||
-        !sourceValue ||
-        !destinationValue
-      ) {
+      if (!governance_address || !messageBody) {
         return res.status(400).json({ message: "Invalid params" });
       }
 
@@ -112,50 +98,98 @@ export class GovernanceController {
         provider
       );
 
-      const config: SafeConfig = {
-        safeAddress: data[0].account_tank_address,
-        ethAdapter: new EthersAdapter({
-          ethers,
-          signerOrProvider: signer,
-        }),
-      };
+      const abiCoder = new ethers.utils.AbiCoder();
 
-      const safeAccount = await Safe.create(config);
-      const functionSignature = "execute(uint256)";
-      const functionSelector = ethers.utils.id(functionSignature).slice(0, 10); // First 4 bytes of the keccak256 hash
-
-      const encodedArguments = ethers.utils.defaultAbiCoder.encode(
-        ["uint256"],
-        [proposalId]
+      const governanceContract = new Contract(
+        governance_address,
+        GovernanceAbi.abi,
+        signer
       );
 
-      const finalData = functionSelector + encodedArguments.slice(2); // Concatenate and remove the '0x' from the encoded arguments
+      const gasLimitValue = 1000000; // Example value, adjust based on current network conditions
 
-      console.log(finalData);
+      const gasPriceValue = ethers.utils.parseUnits("30", "gwei"); // Example value, adjust based on current network conditions
 
-      const safeTransaction: SafeTransactionDataPartial = {
-        to: governance_address,
-        data: finalData,
-        value: "0.001",
-      };
-
-      const prepareTransaction = await safeAccount.createTransaction({
-        safeTransactionData: safeTransaction,
-      });
-
-      const isValidTx = await safeAccount.isValidTransaction(
-        prepareTransaction
+      const executeProposal = await governanceContract.executeProposal(
+        proposalId,
+        {
+          value: ethers.utils.parseEther("0.02"),
+          gasLimit: gasLimitValue,
+          gasPrice: gasPriceValue,
+        }
       );
 
-      if (!isValidTx) {
-        return res.status(400).json({ message: "Invalid transaction" });
-      }
+      const tx = await executeProposal.wait();
 
-      const txHash = await safeAccount.executeTransaction(prepareTransaction);
+      //   const governanceInterface = new ethers.utils.Interface(GovernanceAbi.abi); // GovernanceContractABI should be the ABI of your Governance contract
+      //   const encodedData = governanceInterface.encodeFunctionData(
+      //     "executeProposal",
+      //     [proposalId]
+      //   );
 
-      const resultHash = await txHash.transactionResponse?.wait();
+      //   const moduleContract = new Contract(
+      //     data[0].module_address,
+      //     ModuleHub.abi,
+      //     signer
+      //   );
 
-      return res.status(200).json({ resultHash });
+      //   console.log(governance_address);
+
+      //   const tx = await moduleContract.execTransactionFromModule(
+      //     governance_address,
+      //     ethers.utils.parseEther("0.02"),
+      //     encodedData,
+      //     0 // Assuming 0 represents Enum.Operation.Call
+      //   );
+
+      //   const resultTx = await tx.wait();
+
+      console.log(tx);
+
+      return res.status(200).json({ tx });
+      //   const config: SafeConfig = {
+      //     safeAddress: data[0].account_tank_address,
+      //     ethAdapter: new EthersAdapter({
+      //       ethers,
+      //       signerOrProvider: signer,
+      //     }),
+      //   };
+
+      //   const safeAccount = await Safe.create(config);
+      //   const functionSignature = "execute(uint256)";
+      //   const functionSelector = ethers.utils.id(functionSignature).slice(0, 10); // First 4 bytes of the keccak256 hash
+
+      //   const finalData = messageBody;
+
+      //   console.log(finalData);
+
+      //   const safeTransaction: SafeTransactionDataPartial = {
+      //     to: governance_address,
+      //     data: finalData,
+      //     value: ethers.utils.parseEther("0.02").toString(),
+      //   };
+
+      //   console.log(safeTransaction);
+
+      //   const prepareTransaction = await safeAccount.createTransaction({
+      //     safeTransactionData: safeTransaction,
+      //   });
+
+      //   const isValidTx = await safeAccount.isValidTransaction(
+      //     prepareTransaction
+      //   );
+
+      //   console.log(isValidTx);
+
+      //   if (!isValidTx) {
+      //     return res.status(400).json({ message: "Invalid transaction" });
+      //   }
+
+      //   const txHash = await safeAccount.executeTransaction(prepareTransaction);
+
+      //   const resultHash = await txHash.transactionResponse?.wait();
+
+      //   return res.status(200).json({ resultHash });
     } catch (e) {
       console.log(e);
       return res.status(500).json({ message: "Internal server error" });
